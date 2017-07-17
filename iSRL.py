@@ -23,8 +23,8 @@ import conll
 config = configparser.ConfigParser()
 config.read('iSRL.conf')
 
-batch_size = config['MODEL']['batch_size']
-num_epochs = config['MODEL']['num_epochs']
+batch_size = int(config['MODEL']['batch_size'])
+num_epochs = int(config['MODEL']['num_epochs'])
 
 mode = "LSTM"
 
