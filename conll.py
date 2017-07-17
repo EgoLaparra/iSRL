@@ -10,13 +10,20 @@ import os
 import re
 import copy as cp
 import numpy as np
+import configparser
 
-gsfile = '/home/egoitz/Data/Datasets/ISRL/BeyondNombank/gold-standard'
-closeddir = '/home/egoitz/Data/Datasets/ISRL/BeyondNombank/dataset/closed-complete/'
-mappingdir = '/home/egoitz/Data/Datasets/ISRL/BeyondNombank/dataset/mappings'
+np.random.seed(55555)
+
+config = configparser.ConfigParser()
+config.read('iSRL.conf')
+
+gsfile = config['DATA']['bnGS']
+closeddir = config['DATA']['close']
+mappingdir = config['DATA']['mappings']
+embfile = config['DATA']['embeddings']
 
 def load_embeddings(vocab, nb_words=None, emb_dim=100,
-                    w2v='conll-train-emb.txt'):
+                    w2v=embfile):
 
     randinit = list(np.random.randn(emb_dim))
     emb_matrix = [randinit for i in range(len(vocab))]
@@ -103,9 +110,9 @@ def get_split(gold, conllclosed, mapp, vocab=list(), max_pcsent=0, max_window=0,
         vocab.append("PADD")
         vocab.append("UNK")
     split = list()
-    for predid in gold:
+    for predid in sorted(gold):
         doc,pps,ppt,pph = predid.split(':')
-        for parg in gold[predid]:
+        for parg in sorted(gold[predid]):
             try:
                 pcs,pct = map(int,mapp[doc][":".join([pps,ppt])].split('-'))
                 pcsent = cp.deepcopy(conllclosed[doc][pcs])

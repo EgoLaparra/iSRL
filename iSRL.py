@@ -8,6 +8,7 @@ Created on Mon Jun 26 11:52:03 2017
 import sys
 import numpy as np
 import math
+import configparser
 
 import torch
 import torch.nn as nn
@@ -15,8 +16,15 @@ from torch.autograd import Variable
 from torch import optim
 
 torch.manual_seed(55555)
+np.random.seed(55555)
 
 import conll
+
+config = configparser.ConfigParser()
+config.read('iSRL.conf')
+
+batch_size = config['MODEL']['batch_size']
+num_epochs = config['MODEL']['num_epochs']
 
 mode = "LSTM"
 
@@ -160,7 +168,6 @@ def train(net, data, nepochs, batch_size, class_weights, vocab, val=None):
     #criterion = BCELossNegSamp
     parameters = filter(lambda p: p.requires_grad, net.parameters())
     optimizer = optim.Adam(parameters)
-    batch_size = 1
     batches = math.ceil(len(data) / batch_size)
     for e in range(nepochs):
         running_loss = 0.0
@@ -168,7 +175,7 @@ def train(net, data, nepochs, batch_size, class_weights, vocab, val=None):
             # Get minibatch samples
             batch = data[b*batch_size:b*batch_size+batch_size]
             tseq, tmask, window, wonehot, widx = extract_data(batch)
-
+            
             tseq = Variable(torch.LongTensor(tseq))
             tmask = Variable(torch.FloatTensor(tmask))
             window = Variable(torch.LongTensor(window))
@@ -229,9 +236,7 @@ else:
     net = OnlyEmbs(len(vocab),100,50)
 net.embs.weight.data.copy_(torch.FloatTensor(emb_matrix))
 net.embs.weight.requires_grad = False
-net.parameters
-emb_matrix
-train(net, data_train, 5, 1, [0,1],vocab, val=data_dev)
+train(net, data_train, num_epochs, batch_size, [0,1],vocab, val=data_dev)
 #prediction = predict(net, data_dev)
 #for d,p in zip(data_dev, prediction.data.numpy()):
 #    print(p)
