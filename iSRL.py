@@ -115,8 +115,8 @@ class RecurrentTgt(nn.Module):
         super(RecurrentTgt, self).__init__()
         self.tgt = nn.Embedding(max_tgt, tgt_dim)
         self.embs = nn.Embedding(max_features, embedding_dim)
-        self.lstm_t = nn.GRU(embedding_dim, hidden_size // 2, bidirectional=True, num_layers=2)
-        self.lstm_w = nn.GRU(embedding_dim, hidden_size // 2, bidirectional=True, num_layers=2)
+        self.lstm_t = nn.GRU(embedding_dim, hidden_size // 2, bidirectional=True, num_layers=1)
+        self.lstm_w = nn.GRU(embedding_dim, hidden_size // 2, bidirectional=True, num_layers=1)
         self.linear1 = nn.Linear(hidden_size * 2 + tgt_dim, 200)
         self.dropout = nn.Dropout(p=0.5)
         self.sigmoid1 = nn.Sigmoid()
@@ -193,7 +193,7 @@ def evaluate(data, answer):
     nprec = 0
     nrec = 0
     for d,a in zip(data, answer):
-        true = d[5]
+        true = d[6]
         if np.sum(a) > 0:
             nprec += 1
         if np.sum(true) > 0:
@@ -296,6 +296,9 @@ net.embs.weight.data.copy_(torch.FloatTensor(emb_matrix))
 net.embs.weight.requires_grad = False
 train(net, data_train, num_epochs, batch_size, [0,1],vocab, val=data_dev)
 #prediction = predict(net, data_dev)
+#answer = get_answer(prediction.data.numpy())
+#prec, rec, f1 = evaluate(data_dev, answer)
+#sys.stdout.write(' - P: %.3f - R: %.3f - F1: %.3f' % (prec, rec, f1))
 #for d,p in zip(data_dev, prediction.data.numpy()):
 #    print(p)
 #    answ = np.argmax(p)
