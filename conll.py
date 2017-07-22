@@ -46,7 +46,7 @@ def load_embeddings(vocab, nb_words=None, emb_dim=100,
 
 def padd_data(data, max_pcsent, max_window):
     for i in range(0,len(data)):
-        (predid,parg,pcsent,masksent,window,windowonehot,windowidx) = data[i]
+        (predid,parg,pargidx,pcsent,masksent,window,windowonehot,windowidx) = data[i]
         pcsent.reverse()
         masksent.reverse()
         for j in range(0,max_pcsent-len(pcsent)):
@@ -64,13 +64,13 @@ def padd_data(data, max_pcsent, max_window):
         window.reverse()
         windowonehot.reverse()
         windowidx.reverse()
-        data[i] = (predid,parg,pcsent,masksent,window,windowonehot,windowidx)
+        data[i] = (predid,parg,pargidx,pcsent,masksent,window,windowonehot,windowidx)
     return data
 
     
 def trunc_data(data, max_pcsent, max_window):
     for i in range(0,len(data)):
-        (predid,parg,pcsent,masksent,window,windowonehot,windowidx) = data[i]
+        (predid,parg,pargidx,pcsent,masksent,window,windowonehot,windowidx) = data[i]
         pcsent.reverse()
         masksent.reverse()
         pcsent = pcsent[:max_window]
@@ -87,7 +87,7 @@ def trunc_data(data, max_pcsent, max_window):
         window.reverse()
         windowonehot.reverse()
         windowidx.reverse()
-        data[i] = (predid,parg,pcsent,masksent,window,windowonehot,windowidx)
+        data[i] = (predid,parg,pargidx,pcsent,masksent,window,windowonehot,windowidx)
     return data    
     
 def index(sent, vocab, train):
@@ -105,7 +105,7 @@ def index(sent, vocab, train):
     return sentidx, vocab
         
 
-def get_split(gold, conllclosed, mapp, vocab=list(), max_pcsent=0, max_window=0, train=True):
+def get_split(gold, conllclosed, mapp, vocab=list(), tg_invent=list(), max_pcsent=0, max_window=0, train=True):
     if train:
         vocab.append("PADD")
         vocab.append("UNK")
@@ -119,9 +119,14 @@ def get_split(gold, conllclosed, mapp, vocab=list(), max_pcsent=0, max_window=0,
                 masksent = list(np.zeros(len(pcsent)))
                 pcword = pcsent[pct-1]
                 masksent[pct-1] = 1
-                pcsent[pct-1] = parg
+                #pcsent[pct-1] = parg # This line substitutes word by predicate#arg
                 argids = gold[predid][parg]
                 if parg != "_":
+                    if parg not in tg_invent:
+                        parg_idx = len(tg_invent)
+                        tg_invent.append(parg)
+                    else:
+                        parg_idx = tg_invent.index(parg)
                     pcsent, vocab = index(pcsent, vocab, train)
                     wstart = pcs-2
                     if wstart < 0:
@@ -147,11 +152,11 @@ def get_split(gold, conllclosed, mapp, vocab=list(), max_pcsent=0, max_window=0,
                         max_pcsent = len(pcsent)
                     if len(window) > max_window:
                         max_window = len(window)
-                    split.append((predid,parg,pcsent,masksent,window,windowonehot,windowidx))
+                    split.append((predid,parg,parg_idx,pcsent,masksent,window,windowonehot,windowidx))
             except KeyError:
                 print (doc,pps,ppt,"not in mappings.")
     
-    return split, vocab, max_pcsent, max_window
+    return split, vocab, tg_invent, max_pcsent, max_window
   
               
 def get_dataset():
@@ -209,9 +214,11 @@ def get_dataset():
     gs.close()
     
     vocab = list()
-    train, vocab, max_pcsent, max_window = get_split(gold["train"], conllclosed, mapp)
-    test, _, max_pcsent, max_window = get_split(gold["test"], conllclosed, mapp, vocab=vocab, max_pcsent=max_pcsent, max_window=max_window, train=False)
-    dev, _, max_pcsent, max_window = get_split(gold["dev"], conllclosed, mapp, vocab=vocab, max_pcsent=max_pcsent, max_window=max_window, train=False)
+    train, vocab, tg_invent, max_pcsent, max_window = get_split(gold["train"], conllclosed, mapp)
+    test, _, _, max_pcsent, max_window = get_split(gold["test"], conllclosed, mapp, vocab=vocab, tg_invent=tg_invent,
+                                                max_pcsent=max_pcsent, max_window=max_window, train=False)
+    dev, _, _, max_pcsent, max_window = get_split(gold["dev"], conllclosed, mapp, vocab=vocab, tg_invent=tg_invent, 
+                                               max_pcsent=max_pcsent, max_window=max_window, train=False)
 
     train = padd_data(train, max_pcsent, max_window)
     test = padd_data(test, max_pcsent, max_window)        
@@ -221,5 +228,5 @@ def get_dataset():
     dev = trunc_data(dev, max_pcsent, 100)
 
         
-    return vocab, train, test, dev
+    return vocab, tg_invent, train, test, dev
         
