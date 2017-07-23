@@ -8,6 +8,7 @@ Created on Sat Jun 17 12:30:03 2017
 import sys
 import os
 import re
+import bz2
 import copy as cp
 import numpy as np
 import configparser
@@ -22,16 +23,24 @@ closeddir = config['DATA']['close']
 mappingdir = config['DATA']['mappings']
 embfile = config['DATA']['embeddings']
 
-def load_embeddings(vocab, nb_words=None, emb_dim=100,
-                    w2v=embfile):
-
-    randinit = list(np.random.randn(emb_dim))
+def load_embeddings(vocab, nb_words=None, embfile=embfile):
+    
+    if os.path.splitext(embfile)[-1] == ".bz2":
+        fembs = bz2.BZ2File(embfile)
+        embs = fembs.read().decode('utf-8').rstrip().split('\n')
+        fembs.close()
+    else:          
+        fembs = open(embfile, 'r')
+        fembs.readline() # get rid off first line
+        embs = fembs.read().rstrip().split('\n')
+        fembs.close()
+    
+    embs_dim = len(embs[0].rstrip().split(' ')) - 1
+    randinit = list(np.random.randn(embs_dim))
     emb_matrix = [randinit for i in range(len(vocab))]
-    emb_matrix[0] = list(np.zeros(emb_dim))
-                  
-    fembs = open(w2v, 'r')
-    fembs.readline() # get rid off first line
-    for line in fembs:
+    emb_matrix[0] = list(np.zeros(embs_dim))
+
+    for line in embs:
         f = line.rstrip().split(' ')
         w, e = f[0], f[1:]
         try:
@@ -40,9 +49,8 @@ def load_embeddings(vocab, nb_words=None, emb_dim=100,
             emb_matrix[idx] = e
         except ValueError:
             pass
-    fembs.close()
     
-    return emb_matrix
+    return emb_matrix, embs_dim
 
 def padd_data(data, max_pcsent, max_window):
     for i in range(0,len(data)):
@@ -214,6 +222,7 @@ def get_dataset():
     gs.close()
     
     vocab = list()
+    tg_invent = list()
     train, vocab, tg_invent, max_pcsent, max_window = get_split(gold["train"], conllclosed, mapp)
     test, _, _, max_pcsent, max_window = get_split(gold["test"], conllclosed, mapp, vocab=vocab, tg_invent=tg_invent,
                                                 max_pcsent=max_pcsent, max_window=max_window, train=False)

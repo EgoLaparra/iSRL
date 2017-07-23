@@ -25,18 +25,22 @@ config.read('iSRL.conf')
 
 batch_size = int(config['MODEL']['batch_size'])
 num_epochs = int(config['MODEL']['num_epochs'])
+fix_embs = bool(int(config['MODEL']['fix_embs']))
+onehot_target = bool(int(config['MODEL']['onehot_target']))
+mode = config['MODEL']['mode']
 
-mode = "TGT"
-
-def new_outs_lengths(input_lenght, kernel_size, padding=0, dilation=1, stride=1):
-    return np.floor((input_lenght + 2*padding - dilation*(kernel_size-1) -1) / stride + 1)
 
 class OnlyEmbs(nn.Module):
-    def __init__(self, max_features, embedding_dim, hidden_size):
+    def __init__(self, max_tgt, tgt_dim, max_features, embedding_dim, hidden_size):
         super(OnlyEmbs, self).__init__()
+        if onehot_target:
+            self.tgt_feats = max_tgt
+        else:
+            self.tgt_feats = tgt_dim
+            self.tgt = nn.Embedding(max_tgt, tgt_dim)
         self.embs = nn.Embedding(max_features, embedding_dim)
         self.dropout = nn.Dropout(p=0.5)
-        self.linear1 = nn.Linear(embedding_dim * 2, 200)
+        self.linear1 = nn.Linear(embedding_dim + self.tgt_feats, 200)
         self.sigmoid1 = nn.Sigmoid()
         self.linear2 = nn.Linear(200, 200)
         self.sigmoid2 = nn.Sigmoid()
@@ -49,12 +53,15 @@ class OnlyEmbs(nn.Module):
                 Variable(torch.zeros(1, 2, hidden_size // 2)))
         
     def forward(self, predarg, target_seq, mask, window):
-        t_embeds = self.embs(target_seq)
+        if onehot_target:
+            tgt = predarg
+        else:
+            tgt = self.tgt(predarg)
+        tgt = tgt.view(1, tgt.size()[0],-1)
         w_embeds = self.embs(window)
-        t_vect = t_embeds.mul(mask).sum(0)
         wt = Variable(torch.FloatTensor())
         for s in torch.split(w_embeds,1):
-            s = torch.cat((t_vect,s),2)
+            s = torch.cat((tgt,s),2)
             if wt.dim() > 0:
                 wt = torch.cat((wt,s))
             else:
@@ -113,11 +120,15 @@ class Recurrent(nn.Module):
 class RecurrentTgt(nn.Module):
     def __init__(self, max_tgt, tgt_dim, max_features, embedding_dim, hidden_size):
         super(RecurrentTgt, self).__init__()
-        self.tgt = nn.Embedding(max_tgt, tgt_dim)
+        if onehot_target:
+            self.tgt_feats = max_tgt
+        else:
+            self.tgt_feats = tgt_dim
+            self.tgt = nn.Embedding(max_tgt, tgt_dim)
         self.embs = nn.Embedding(max_features, embedding_dim)
         self.lstm_t = nn.GRU(embedding_dim, hidden_size // 2, bidirectional=True, num_layers=1)
         self.lstm_w = nn.GRU(embedding_dim, hidden_size // 2, bidirectional=True, num_layers=1)
-        self.linear1 = nn.Linear(hidden_size * 2 + tgt_dim, 200)
+        self.linear1 = nn.Linear(hidden_size * 2 + self.tgt_feats, 200)
         self.dropout = nn.Dropout(p=0.5)
         self.sigmoid1 = nn.Sigmoid()
         self.linear2 = nn.Linear(200, 200)
@@ -131,7 +142,10 @@ class RecurrentTgt(nn.Module):
                 Variable(torch.zeros(1, 2, hidden_size // 2)))
         
     def forward(self, predarg, target_seq, mask, window):
-        tgt = self.tgt(predarg)
+        if onehot_target:
+            tgt = predarg
+        else:
+            tgt = self.tgt(predarg)
         tgt = tgt.view(1, tgt.size()[0],-1)
         t_embeds = self.embs(target_seq)
         t_seq, _ = self.lstm_t(t_embeds)
@@ -229,7 +243,12 @@ def train(net, data, nepochs, batch_size, class_weights, vocab, val=None):
             batch = data[b*batch_size:b*batch_size+batch_size]
             predarg, tseq, tmask, window, wonehot, widx = extract_data(batch)
             
-            predarg = Variable(torch.LongTensor(predarg))
+            if onehot_target:
+                tgt_1hot = np.zeros((len(predarg), net.tgt_feats))
+                tgt_1hot[np.arange(len(predarg)), predarg] = 1
+                predarg = Variable(torch.from_numpy(tgt_1hot).float())
+            else:
+                predarg = Variable(torch.LongTensor(predarg))
             tseq = Variable(torch.LongTensor(tseq))
             tmask = Variable(torch.FloatTensor(tmask))
             window = Variable(torch.LongTensor(window))
@@ -270,7 +289,12 @@ def train(net, data, nepochs, batch_size, class_weights, vocab, val=None):
 def predict(net, data):
     predarg, tseq, tmask, window, _, _ = extract_data(data)
     
-    predarg = Variable(torch.LongTensor(predarg))
+    if onehot_target:
+        tgt_1hot = np.zeros((len(predarg), net.tgt_feats))
+        tgt_1hot[np.arange(len(predarg)), predarg] = 1
+        predarg = Variable(torch.from_numpy(tgt_1hot).float())
+    else:
+        predarg = Variable(torch.LongTensor(predarg))
     tseq = Variable(torch.LongTensor(tseq))
     tmask = Variable(torch.FloatTensor(tmask))
     window = Variable(torch.LongTensor(window))
@@ -285,15 +309,16 @@ def predict(net, data):
 
         
 vocab, tg_invent, data_train, data_test, data_dev = conll.get_dataset()
-emb_matrix= conll.load_embeddings(vocab)
+emb_matrix,embs_dim = conll.load_embeddings(vocab)
 if mode == "LSTM":
-    net = Recurrent(len(vocab),100,50)
+    net = Recurrent(len(vocab),embs_dim,50)
 elif mode == "TGT":
-    net = RecurrentTgt(len(tg_invent), 10, len(vocab),100,50)
+    net = RecurrentTgt(len(tg_invent),10,len(vocab),embs_dim,50)
 else:
-    net = OnlyEmbs(len(vocab),100,50)
+    net = OnlyEmbs(len(tg_invent),50,len(vocab),embs_dim,50)
 net.embs.weight.data.copy_(torch.FloatTensor(emb_matrix))
-net.embs.weight.requires_grad = False
+if fix_embs:
+    net.embs.weight.requires_grad = False
 train(net, data_train, num_epochs, batch_size, [0,1],vocab, val=data_dev)
 #prediction = predict(net, data_dev)
 #answer = get_answer(prediction.data.numpy())
